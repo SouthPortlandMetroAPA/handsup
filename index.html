@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<!--
+  HandsUp — South Portland Metro APA · the event coordinator's volunteer list (v0.1)
+  ─────────────────────────────────────────────────────────────────────────────
+  Brief: tools/claude/briefs/2026-09-13-handsup-volunteer-list.md  (T2)
+  WHO   the event coordinator (not an operator, no Slate). She opens the link the
+        league gave her: ?t=<coordinator token>.
+  WHAT  everyone who ticked "I can volunteer" on a CountMeIn RSVP, grouped by event,
+        with their volunteer comment, RSVP note, party size, and phone numbers —
+        Call and Text buttons; with ≥2 numbers a picker asks which one first.
+  DATA  ONE read path: rpc countmein.coordinator_volunteers(p_token) — SECURITY
+        DEFINER, anon-executable, returns rows only for a live token (wrong token →
+        empty, never an error). rsvps / players / coordinator_keys are NOT anon-
+        readable. Players on the no-contact list come back with no numbers.
+  SENDS nothing. tel:/sms: are the coordinator's own phone acting.
+  LIVE  re-fetches every 30 s (new volunteers appear without a reload).
+  Brand: shared spm-base.css. Auto-updater polls apa_core.apps (row "HandsUp") →
+  version.js (serve-then-bump, reference_deploy.md). No secrets: anon key is public.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Volunteers — South Portland Metro APA</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#ea002a">
+<link rel="stylesheet" href="https://southportlandmetroapa.github.io/shared/spm-base.css">
+<script src="version.js"></script>
+<style>
+  .spm-page{ max-width:640px; }
+  .lead{ color:var(--muted); margin:2px 0 14px; font-size:.98rem; }
+  .tools{ display:flex; gap:8px; align-items:center; margin:0 0 14px; }
+  .tools input{ flex:1; font:inherit; padding:12px 14px; border:2px solid var(--border); border-radius:12px; min-height:48px; }
+  .tools input:focus{ outline:none; border-color:var(--spm-accent); }
+  .count{ color:var(--muted); font-size:.9rem; white-space:nowrap; }
+  .event{ margin:18px 0 8px; }
+  .event h2{ margin:0; font-size:1.15rem; color:var(--spm-accent); }
+  .event .when{ color:var(--muted); font-size:.9rem; }
+  .card{ border:1px solid var(--border); border-radius:16px; padding:14px 14px 12px; margin-top:10px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+  .card .top{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .card .name{ font-weight:800; font-size:1.08rem; }
+  .card .meta{ color:var(--muted); font-size:.85rem; }
+  .tag{ display:inline-block; font-size:.7rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; border-radius:999px; padding:2px 8px; background:#e6f7ec; color:#0a7d33; }
+  .tag.maybe{ background:#fff3cd; color:#7a5a00; }
+  .tag.dnc{ background:#111; color:#fff; }
+  .note{ margin:8px 0 0; font-size:.95rem; white-space:pre-wrap; }
+  .note b{ color:var(--muted); font-weight:600; font-size:.82rem; display:block; letter-spacing:.03em; text-transform:uppercase; }
+  .actions{ display:flex; gap:10px; margin-top:12px; }
+  .btn{ flex:1; font:inherit; font-weight:700; font-size:1rem; border:none; border-radius:999px; padding:13px 16px; min-height:48px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:8px; text-decoration:none; }
+  .btn.call{ background:linear-gradient(135deg,var(--spm-primary),var(--spm-accent)); color:#fff; }
+  .btn.text{ background:#fff; color:var(--spm-accent); border:2px solid var(--spm-accent); }
+  .nophone{ margin-top:10px; color:var(--muted); font-size:.9rem; }
+  .empty{ text-align:center; color:var(--muted); padding:40px 12px; }
+  /* number picker — same job as Slate's phone menu, phone-sized */
+  .sheet-bg{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:flex-end; justify-content:center; z-index:50; }
+  .sheet-bg.show{ display:flex; }
+  .sheet{ background:#fff; width:100%; max-width:640px; border-radius:18px 18px 0 0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow:0 -6px 24px rgba(0,0,0,.2); }
+  .sheet h3{ margin:0 0 4px; font-size:1.05rem; }
+  .sheet .hint{ color:var(--muted); font-size:.88rem; margin:0 0 10px; }
+  .sheet a.num{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 14px; min-height:52px; border:2px solid var(--border); border-radius:14px; margin-top:8px; text-decoration:none; color:var(--text); font-weight:700; font-size:1.05rem; }
+  .sheet a.num span{ color:var(--muted); font-weight:600; font-size:.82rem; text-transform:uppercase; letter-spacing:.04em; }
+  .sheet a.num:active{ background:#f3f6ff; }
+  .sheet button.cancel{ width:100%; margin-top:12px; font:inherit; font-weight:700; min-height:48px; border:none; background:#f1f1f1; border-radius:999px; }
+  #updateOverlay{ position:fixed; inset:0; background:rgba(255,255,255,.96); z-index:9999; display:none; align-items:center; justify-content:center; flex-direction:column; gap:14px; text-align:center; padding:24px; }
+  #updateOverlay.show{ display:flex; }
+  #updateOverlay .sp{ width:42px; height:42px; border:4px solid #e5e7eb; border-top-color:var(--spm-primary); border-radius:50%; animation:huspin 1s linear infinite; }
+  @keyframes huspin{ to{ transform:rotate(360deg); } }
+  .foot{ text-align:center; color:var(--muted); font-size:.8rem; margin:22px 0 8px; }
+</style>
+</head>
+<body>
+  <div id="updateOverlay"><div class="sp"></div><div><b>Updating…</b><br>Grabbing the latest version.</div></div>
+  <div class="spm-page">
+    <header class="spm-header">
+      <h1>Volunteers 🙌</h1>
+      <p class="spm-subtitle">South Portland Metro APA</p>
+    </header>
+    <main class="spm-card">
+      <p class="lead" id="lead">Everyone who offered to help, with how to reach them.</p>
+      <div class="tools" id="tools" hidden>
+        <input id="q" type="search" placeholder="Search name or comment…" autocomplete="off" aria-label="Search volunteers">
+        <span class="count" id="count"></span>
+      </div>
+      <div id="list" aria-live="polite"><div class="empty">Loading…</div></div>
+    </main>
+    <p class="foot">Tap Call or Text — your phone does the rest. Numbers are the league’s records; please don’t share the list.</p>
+  </div>
+
+  <div class="sheet-bg" id="sheetBg" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet">
+      <h3 id="sheetTitle">Which number?</h3>
+      <p class="hint" id="sheetHint"></p>
+      <div id="sheetNums"></div>
+      <button type="button" class="cancel" id="sheetCancel">Cancel</button>
+    </div>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const SB_URL = 'https://dqzbekoaysgaiqljueac.supabase.co';
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxemJla29heXNnYWlxbGp1ZWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNzA5NzgsImV4cCI6MjA5MDc0Njk3OH0.cCdGxZ4zEFzU_r6lWSDeoNWG67Q4MSYCAtpds035dfU';
+  const APP_NAME = 'HandsUp';
+  const TOKEN = new URLSearchParams(location.search).get('t') || '';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const fmtPhone = d => d && d.length === 10 ? '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6) : (d && d.length === 11 && d[0] === '1' ? fmtPhone(d.slice(1)) : d);
+  const fmtDay = iso => { try { const [y,m,d] = String(iso).split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' }); } catch(e){ return iso; } };
+  let rows = [];
+
+  async function load(){
+    if (!/^[0-9a-f-]{36}$/i.test(TOKEN)) { $('list').innerHTML = '<div class="empty">This link is missing its key. Ask the league office for the volunteers link.</div>'; return; }
+    try {
+      const r = await fetch(SB_URL + '/rest/v1/rpc/coordinator_volunteers', { method:'POST', headers:{ apikey:ANON, Authorization:'Bearer '+ANON, 'Content-Type':'application/json', 'Content-Profile':'countmein' }, body: JSON.stringify({ p_token: TOKEN }) });
+      const j = await r.json();
+      if (!Array.isArray(j)) throw new Error('bad response');
+      rows = j; render();
+    } catch(e) { if (!rows.length) $('list').innerHTML = '<div class="empty">Could not load the list. Check your connection and try again.</div>'; }
+  }
+
+  /* numbers a person can be reached on, labelled; no-contact players carry none */
+  function numbersOf(r){
+    return [['Cell', r.cell], ['Home', r.home], ['Work', r.work], ['Other', r.other]].filter(x => x[1]).map(x => ({ label:x[0], digits:x[1] }));
+  }
+
+  function render(){
+    const q = ($('q').value || '').trim().toLowerCase();
+    const list = $('list');
+    if (!rows.length) { $('tools').hidden = true; list.innerHTML = '<div class="empty">' + (TOKEN ? 'No volunteers yet — or this link is no longer active. Ask the league office if you expected names here.' : '') + '</div>'; return; }
+    $('tools').hidden = false;
+    const shown = rows.filter(r => !q || (r.name + ' ' + (r.volunteer_note||'') + ' ' + (r.note||'')).toLowerCase().includes(q));
+    $('count').textContent = shown.length + ' of ' + rows.length;
+    const byEvent = new Map();
+    for (const r of shown) { if (!byEvent.has(r.event_slug)) byEvent.set(r.event_slug, { r, people: [] }); byEvent.get(r.event_slug).people.push(r); }
+    let html = '';
+    for (const [, g] of byEvent) {
+      html += '<div class="event"><h2>' + esc(g.r.event_name) + '</h2><div class="when">' + esc(fmtDay(g.r.event_date)) + (g.r.event_active ? '' : ' · past event') + '</div></div>';
+      html += g.people.map(cardHtml).join('');
+    }
+    list.innerHTML = html || '<div class="empty">Nobody matches that search.</div>';
+    list.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', onAction));
+  }
+
+  function cardHtml(r){
+    const nums = numbersOf(r);
+    const guests = r.party_size > 1 ? ' · party of ' + r.party_size : '';
+    let reach;
+    if (r.on_dnc) reach = '<div class="nophone"><span class="tag dnc">No-contact list</span> Please reach this person through the league office.</div>';
+    else if (!nums.length) reach = '<div class="nophone">No phone on file — ask the league office to email them.</div>';
+    else reach = '<div class="actions">'
+      + '<button type="button" class="btn call" data-act="call" data-id="' + r.rsvp_id + '">📞 Call</button>'
+      + '<button type="button" class="btn text" data-act="text" data-id="' + r.rsvp_id + '">💬 Text</button></div>';
+    return '<div class="card">'
+      + '<div class="top"><span class="name">' + esc(r.name) + '</span><span class="tag' + (r.status === 'maybe' ? ' maybe' : '') + '">' + (r.status === 'maybe' ? 'Maybe coming' : 'Coming') + '</span><span class="meta">' + guests + '</span></div>'
+      + (r.volunteer_note ? '<p class="note"><b>Can help with</b>' + esc(r.volunteer_note) + '</p>' : '<p class="note"><b>Can help with</b><span style="color:var(--muted)">(no comment left)</span></p>')
+      + (r.note ? '<p class="note"><b>RSVP note</b>' + esc(r.note) + '</p>' : '')
+      + reach + '</div>';
+  }
+
+  /* Call / Text: one number → go straight there; several → ask which */
+  function hrefFor(act, digits){ return (act === 'call' ? 'tel:' : 'sms:') + digits; }
+  function onAction(ev){
+    const act = ev.currentTarget.dataset.act, r = rows.find(x => String(x.rsvp_id) === ev.currentTarget.dataset.id);
+    if (!r || r.on_dnc) return;
+    const nums = numbersOf(r);
+    if (!nums.length) return;
+    if (nums.length === 1) { location.href = hrefFor(act, nums[0].digits); return; }
+    $('sheetTitle').textContent = (act === 'call' ? 'Call ' : 'Text ') + r.name;
+    $('sheetHint').textContent = 'Which number?';
+    $('sheetNums').innerHTML = nums.map(n => '<a class="num" href="' + hrefFor(act, n.digits) + '">' + esc(fmtPhone(n.digits)) + '<span>' + esc(n.label) + '</span></a>').join('');
+    $('sheetBg').classList.add('show');
+  }
+  function closeSheet(){ $('sheetBg').classList.remove('show'); }
+  $('sheetCancel').addEventListener('click', closeSheet);
+  $('sheetBg').addEventListener('click', e => { if (e.target === $('sheetBg')) closeSheet(); });
+  $('sheetNums').addEventListener('click', () => setTimeout(closeSheet, 300));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+  $('q').addEventListener('input', render);
+
+  /* ── Auto-updater (checkVersion → pollForDeploy; reference_deploy.md) ── */
+  function cmpVer(a, b){ const pa = String(a).split('.'), pb = String(b).split('.'); for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const x = parseInt(pa[i], 10) || 0, y = parseInt(pb[i], 10) || 0; if (x > y) return 1; if (x < y) return -1; } return 0; }
+  let _versionMismatch = false;
+  async function checkVersion(){
+    if (_versionMismatch) return;
+    try {
+      const r = await fetch(SB_URL + '/rest/v1/apps?app_name=eq.' + APP_NAME + '&select=version', { headers:{ apikey:ANON, Authorization:'Bearer '+ANON, 'Accept-Profile':'apa_core' } });
+      const rowsV = await r.json(); const remote = rowsV && rowsV[0] && rowsV[0].version;
+      if (!remote || remote === window.APP_VERSION || cmpVer(remote, window.APP_VERSION) <= 0) return;
+      _versionMismatch = true; $('updateOverlay').classList.add('show'); pollForDeploy();
+    } catch(e){}
+  }
+  function pollForDeploy(){
+    const started = Date.now();
+    const tick = async () => {
+      try { const r = await fetch('version.js?cb=' + Date.now(), { cache:'no-store' }); const m = (await r.text()).match(/APP_VERSION\s*=\s*'([0-9.]+)'/);
+        if (m && m[1] !== window.APP_VERSION) { const u = new URL(location.href); u.searchParams.set('v', m[1]); location.replace(u.pathname + u.search); return; } } catch(e){}
+      if (Date.now() - started < 120000) setTimeout(tick, 5000); else { $('updateOverlay').classList.remove('show'); _versionMismatch = false; }
+    };
+    tick();
+  }
+
+  load();
+  setInterval(load, 30000);          // live: new volunteers appear without a reload
+  setInterval(checkVersion, 30000);
+</script>
+</body>
+</html>
