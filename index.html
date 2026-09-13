@@ -118,7 +118,14 @@
 
   /* numbers a person can be reached on, labelled; no-contact players carry none */
   function numbersOf(r){
-    return [['Cell', r.cell], ['Home', r.home], ['Work', r.work], ['Other', r.other]].filter(x => x[1]).map(x => ({ label:x[0], digits:x[1] }));
+    /* the same number often sits in two columns (cell = home) — one entry, both labels */
+    const out = [];
+    for (const [label, digits] of [['Cell', r.cell], ['Home', r.home], ['Work', r.work], ['Other', r.other]]) {
+      if (!digits) continue;
+      const hit = out.find(o => o.digits === digits);
+      if (hit) hit.label += ' / ' + label; else out.push({ label, digits });
+    }
+    return out;
   }
 
   function render(){
