@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <!--
-  HandsUp — South Portland Metro APA · the event coordinator's volunteer list (v0.1)
+  HandsUp — South Portland Metro APA · the event coordinator's volunteer list (v0.3)
   ─────────────────────────────────────────────────────────────────────────────
   Brief: tools/claude/briefs/2026-09-13-handsup-volunteer-list.md  (T2)
   WHO   the event coordinator (not an operator, no Slate). She opens the link the
         league gave her: ?t=<coordinator token>.
   WHAT  everyone who ticked "I can volunteer" on a CountMeIn RSVP, grouped by event,
         with their volunteer comment, RSVP note, party size, and phone numbers —
-        Call and Text buttons; with ≥2 numbers a picker asks which one first.
+        Call and Text buttons; with ≥2 numbers a picker asks which one first. A Group
+        text button opens one sms: to everyone listed (+ two fixed league numbers).
   DATA  ONE read path: rpc countmein.coordinator_volunteers(p_token) — SECURITY
         DEFINER, anon-executable, returns rows only for a live token (wrong token →
         empty, never an error). rsvps / players / coordinator_keys are NOT anon-
@@ -65,6 +66,7 @@
   #updateOverlay.show{ display:flex; }
   #updateOverlay .sp{ width:42px; height:42px; border:4px solid #e5e7eb; border-top-color:var(--spm-primary); border-radius:50%; animation:huspin 1s linear infinite; }
   @keyframes huspin{ to{ transform:rotate(360deg); } }
+  #groupText{ width:100%; }
   .foot{ text-align:center; color:var(--muted); font-size:.8rem; margin:22px 0 8px; }
 </style>
 </head>
@@ -80,6 +82,9 @@
       <div class="tools" id="tools" hidden>
         <input id="q" type="search" placeholder="Search name or comment…" autocomplete="off" aria-label="Search volunteers">
         <span class="count" id="count"></span>
+      </div>
+      <div class="actions" id="groupRow" hidden style="margin:0 0 14px">
+        <a class="btn text" id="groupText" href="#" rel="noopener">💬 Group text everyone listed</a>
       </div>
       <div id="list" aria-live="polite"><div class="empty">Loading…</div></div>
     </main>
@@ -105,6 +110,16 @@
   const fmtPhone = d => d && d.length === 10 ? '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6) : (d && d.length === 11 && d[0] === '1' ? fmtPhone(d.slice(1)) : d);
   const fmtDay = iso => { try { const [y,m,d] = String(iso).split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' }); } catch(e){ return iso; } };
   let rows = [];
+  /* Group text: one sms: to everyone currently listed who has a number (cell first,
+     else home / work / other; no-contact players carry no numbers so they are never
+     included) PLUS these two numbers on every group text (operator directive
+     2026-09-14). Same comma-joined recipient form as Slate's sbBuildSmsUrl. */
+  const GROUP_ALWAYS = ['5033092714', '5033093076'];
+  function bestNumber(r){ return r.cell || r.home || r.work || r.other || ''; }
+  function groupSmsHref(list){
+    const digits = [...new Set(GROUP_ALWAYS.concat(list.filter(r => !r.on_dnc).map(bestNumber).filter(Boolean)))];
+    return 'sms:' + digits.join(',');
+  }
 
   async function load(){
     if (!/^[0-9a-f-]{36}$/i.test(TOKEN)) { $('list').innerHTML = '<div class="empty">This link is missing its key. Ask the league office for the volunteers link.</div>'; return; }
@@ -135,6 +150,10 @@
     $('tools').hidden = false;
     const shown = rows.filter(r => !q || (r.name + ' ' + (r.volunteer_note||'') + ' ' + (r.note||'')).toLowerCase().includes(q));
     $('count').textContent = shown.length + ' of ' + rows.length;
+    const reachable = shown.filter(r => !r.on_dnc && bestNumber(r)).length;
+    $('groupRow').hidden = reachable === 0;
+    $('groupText').href = groupSmsHref(shown);
+    $('groupText').textContent = '💬 Group text ' + (q ? 'these ' + reachable : 'all ' + reachable) + ' volunteer' + (reachable === 1 ? '' : 's');
     const byEvent = new Map();
     for (const r of shown) { if (!byEvent.has(r.event_slug)) byEvent.set(r.event_slug, { r, people: [] }); byEvent.get(r.event_slug).people.push(r); }
     let html = '';
