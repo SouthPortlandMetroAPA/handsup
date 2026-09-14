@@ -170,7 +170,7 @@
     const guests = r.party_size > 1 ? ' · party of ' + r.party_size : '';
     let reach;
     if (r.on_dnc) reach = '<div class="nophone"><span class="tag dnc">No-contact list</span> Please reach this person through the league office.</div>';
-    else if (!nums.length) reach = '<div class="nophone">No phone on file — ask the league office to email them.</div>';
+    else if (!nums.length) reach = '<div class="nophone">' + (r.member_number ? 'No phone on file — ask the league office to email them.' : 'Not linked to a member record yet — ask the league office.') + '</div>';
     else reach = '<div class="actions">'
       + '<button type="button" class="btn call" data-act="call" data-id="' + r.rsvp_id + '">📞 Call</button>'
       + '<button type="button" class="btn text" data-act="text" data-id="' + r.rsvp_id + '">💬 Text</button></div>';
@@ -178,6 +178,8 @@
       + '<div class="top"><span class="name">' + esc(r.name) + '</span><span class="tag' + (r.status === 'maybe' ? ' maybe' : '') + '">' + (r.status === 'maybe' ? 'Maybe coming' : 'Coming') + '</span><span class="meta">' + guests + '</span></div>'
       + (r.volunteer_note ? '<p class="note"><b>Can help with</b>' + esc(r.volunteer_note) + '</p>' : '<p class="note"><b>Can help with</b><span style="color:var(--muted)">(no comment left)</span></p>')
       + (r.note ? '<p class="note"><b>RSVP note</b>' + esc(r.note) + '</p>' : '')
+      /* the RSVP had no member link; the record was found by a UNIQUE exact name match */
+      + (r.matched_by === 'name' ? '<div class="nophone">Matched to the member record by name — double-check it is the right person.</div>' : '')
       + reach + '</div>';
   }
 
