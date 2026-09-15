@@ -28,6 +28,8 @@
 <link rel="stylesheet" href="https://southportlandmetroapa.github.io/shared/spm-base.css">
 <script src="version.js"></script>
 <style>
+  /* the hidden attribute must beat class display rules (.picked{display:flex} etc.) */
+  [hidden]{ display:none !important; }
   .spm-page{ max-width:640px; }
   .lead{ color:var(--muted); margin:2px 0 14px; font-size:.98rem; }
   .tools{ display:flex; gap:8px; align-items:center; margin:0 0 14px; }
